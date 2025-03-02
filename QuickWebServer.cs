@@ -1,4 +1,7 @@
-﻿using System;
+//Quick Web Server
+//Written by Jason Bernier
+//https://github.com/jasonbernier/QuickWebServer
+using System;
 using System.IO;
 using System.Linq;
 using System.Net;

@@ -1,6 +1,8 @@
 # Quick Web Server
 
-Quick Web Server is a multi-threaded file server built in C# that lets you upload and download files over HTTP/HTTPS. It serves files from a specified working directory and can be secured with HTTP Basic Authentication   via the `--password` option. Additionally, the server logs events to a log file (`server.log`) and provides a simple monitoring endpoint.
+Quick Web Server is a multi-threaded and lightweight web/file server built in C# that lets you upload and download files over HTTP/HTTPS. It serves files from a specified working directory and can be secured with HTTP Basic Authentication via the `--password` option. Additionally, the server logs events to a log file (`server.log`) and provides a simple monitoring endpoint. This can be used during penetration tests to quickly move files accross hosts.
+
+
 
 ## Features
 

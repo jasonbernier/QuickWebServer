@@ -50,8 +50,6 @@ Run the executable with the following parameters:
 
 QuickWebServer.exe [ip] [port] [workingDirectory] [--password <password>] [--https]
 
-markdown
-Copy
 
 - **ip:** *(Optional)* IP address to bind to.  
   **Default:** `+` (listens on all IP addresses)
@@ -74,8 +72,6 @@ To display usage instructions and exit, run:
 
 QuickWebServer.exe --help
 
-markdown
-Copy
 
 ### Examples
 
@@ -83,30 +79,22 @@ Copy
 
 QuickWebServer.exe
 
-markdown
-Copy
 
 - **Specifying IP, Port, and Working Directory (HTTP):**
 
 QuickWebServer.exe 127.0.0.1 8081 "C:\MyFiles"
 
-markdown
-Copy
 
 - **Specifying Authentication and HTTPS:**
 
 QuickWebServer.exe 127.0.0.1 8080 "C:\MyFiles" --password mySecretPassword --https
 
-markdown
-Copy
 
 ### Monitoring
 
 - Access the `/monitor` endpoint in your browser or via a tool like `curl` to see metrics:
 http://<ip>:<port>/monitor
 
-css
-Copy
 The endpoint returns a JSON response such as:
 ```json
 { "totalRequests": 123, "errorCount": 2 }

@@ -8,7 +8,6 @@ Provides file listing, upload, and streamed download with Basic Authentication, 
 
 ## Features
 
-- **HTML5 UI** with a “Quick Web Server” banner  
 - **File Listing**: Browse and download files in a directory  
 - **File Upload**: Secure multipart‐form uploads  
 - **Streamed Downloads**: No browser hangs on large files  

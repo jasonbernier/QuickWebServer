@@ -39,7 +39,7 @@ Provides file listing, upload, and streamed download with Basic Authentication, 
 
 1. Clone your repository:
    ```bash
-   git clone https://github.com/yourusername/QuickWebServer.git
+   git clone https://github.com/jasonbernier/QuickWebServer/QuickWebServer.git
    cd QuickWebServer
    ```
 2. Build with the .NET CLI:

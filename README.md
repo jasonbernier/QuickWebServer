@@ -1,100 +1,147 @@
 # Quick Web Server
+Written by Jason Bernier
 
-Quick Web Server is a multi-threaded and lightweight web/file server built in C# that lets you upload and download files over HTTP/HTTPS. It serves files from a specified working directory and can be secured with HTTP Basic Authentication via the `--password` option. Additionally, the server logs events to a log file (`server.log`) and provides a simple monitoring endpoint. This can be used during penetration tests to quickly move files across hosts.
+A simple, multi‐threaded HTTP/HTTPS file server written in C# 7.3.  
+Provides file listing, upload, and streamed download with Basic Authentication, IP‐based logging, and a built‐in monitoring endpoint.
 
-
+---
 
 ## Features
 
-- **Default Bindings:**  
-  If no IP or port is specified, the server listens on all IP addresses (`+`) and port `8080`.
+- **HTML5 UI** with a “Quick Web Server” banner  
+- **File Listing**: Browse and download files in a directory  
+- **File Upload**: Secure multipart‐form uploads  
+- **Streamed Downloads**: No browser hangs on large files  
+- **Basic Authentication**: Optional `--password` protection  
+- **IP Logging**: Logs client IP for all requests, uploads, and downloads  
+- **Monitoring Endpoint**: `/monitor` → JSON metrics  
+- **Command-line Configuration**:
+  - `--ip <address>` (e.g. `+` or `0.0.0.0`)  
+  - `--port <port>`  
+  - `--workingdir <path>`  
+  - `--password <pw>`  
+  - `--https`  
+  - `--help`  
+- **Auto-create Working Directory** if it doesn’t exist  
+- **Console & File Logging**: `server.log`  
 
-- **Default Working Directory:**  
-  If no working directory is specified, the current working directory is used.
+---
 
-- **HTTPS Support:**  
-  Use the `--https` flag to run the server over HTTPS (requires proper SSL certificate binding).
+## Requirements
 
-- **File Listing:**  
-  Automatically displays all files in the working directory with clickable download links.
+- [.NET SDK (2.1+) or newer](https://dotnet.microsoft.com/download)  
+- Windows, Linux, or macOS  
+- If using `--https`, you must bind an SSL certificate manually (e.g. via `netsh` on Windows).
 
-- **File Download:**  
-  Download files by clicking the links.
+---
 
-- **File Upload:**  
-  Upload files via a simple HTML form.
+## Building
 
-- **Multi-threaded:**  
-  Handles multiple requests concurrently using asynchronous tasks.
+1. Clone your repository:
+   ```bash
+   git clone https://github.com/yourusername/QuickWebServer.git
+   cd QuickWebServer
+   ```
+2. Build with the .NET CLI:
+   ```bash
+   dotnet build -c Release
+   ```
+3. The compiled executable will be in:
+   ```
+   bin/Release/netcoreapp2.1/QuickWebServer.exe
+   ```
+   (or similar, depending on your target framework).
 
-- **Optional Authentication:**  
-  Secure the server with HTTP Basic Authentication by specifying a password with the `--password` option.
+---
 
-- **Logging:**  
-  Logs key events and errors to `server.log` and the console.
-
-- **Monitoring:**  
-  Access the `/monitor` endpoint to view basic metrics (total requests and error count) in JSON format.
-
-- **Help Menu on Startup:**  
-  The help menu is displayed every time the server is run.
-
-- **--help Option:**  
-  When specified, the help menu is displayed and the server exits immediately.
-  
 ## Usage
 
-### Command-Line Arguments
+```bash
+QuickWebServer.exe [--ip <address>] [--port <port>] [--workingdir <path>]
+                  [--password <pw>] [--https] [--help]
+```
 
-Run the executable with the following parameters:
+- `--ip <address>`  
+  Bind to a specific IP (e.g. `127.0.0.1`), or `+` / `0.0.0.0` for all interfaces. Default: `+`
 
-QuickWebServer.exe [ip] [port] [workingDirectory] [--password <password>] [--https]
+- `--port <port>`  
+  Port to listen on. Default: `8080`
 
+- `--workingdir <path>`  
+  Directory to serve files from. Default: current working directory
 
-- **ip:** *(Optional)* IP address to bind to.  
-  **Default:** `+` (listens on all IP addresses)
+- `--password <pw>`  
+  Enable Basic Authentication with this password. If omitted, no auth is required.
 
-- **port:** *(Optional)* Port number to listen on.  
-  **Default:** `8080`
+- `--https`  
+  Serve over HTTPS. Requires you to have bound an SSL certificate externally.
 
-- **workingDirectory:** *(Optional)* Directory path from which files are served and stored.  
-  **Default:** Current working directory
-
-- **--password <password>:** *(Optional)* Specifies the password for HTTP Basic Authentication.  
-  If omitted, authentication is disabled.
-
-- **--https:** *(Optional)* Flag to enable HTTPS.  
-  **Note:** Ensure you have bound a valid SSL certificate to the port.
-
-### Help Option
-
-To display usage instructions and exit, run:
-
-QuickWebServer.exe --help
-
+- `--help`  
+  Display usage instructions and exit.
 
 ### Examples
 
-- **Using All Defaults (no authentication, HTTP):**
+- **Default (HTTP, port 8080, current directory)**  
+  ```bash
+  QuickWebServer.exe
+  ```
 
-QuickWebServer.exe
+- **Custom IP, port and directory**  
+  ```bash
+  QuickWebServer.exe --ip 0.0.0.0 --port 9000 --workingdir D:\Shared
+  ```
 
+- **Enable password & HTTPS**  
+  ```bash
+  QuickWebServer.exe --workingdir /var/www/files --password MySecret123 --https
+  ```
 
-- **Specifying IP, Port, and Working Directory (HTTP):**
+- **Show help**  
+  ```bash
+  QuickWebServer.exe --help
+  ```
 
-QuickWebServer.exe 127.0.0.1 8081 "C:\MyFiles"
+---
 
+## Endpoints
 
-- **Specifying Authentication and HTTPS:**
+- **GET /**  
+  HTML page with banner, file list, and upload form.
 
-QuickWebServer.exe 127.0.0.1 8080 "C:\MyFiles" --password mySecretPassword --https
+- **GET /download?file=NAME**  
+  Streams the specified file as an attachment. Logs client IP and filename.
 
+- **POST /upload**  
+  Accepts a multipart‐form file upload. Saves into the working directory. Logs client IP and uploaded filename. Redirects back to `/` on success.
 
-### Monitoring
+- **GET /monitor**  
+  Returns metrics in JSON:
+  ```json
+  {
+    "totalRequests": 123,
+    "errorCount": 2
+  }
+  ```
 
-- Access the `/monitor` endpoint in your browser or via a tool like `curl` to see metrics:
-http://<ip>:<port>/monitor
+---
 
-The endpoint returns a JSON response such as:
-```json
-{ "totalRequests": 123, "errorCount": 2 }
+## Logging
+
+- **Console**: Every request, upload, download, and error is logged with timestamp and client IP.  
+- **File**: Appends to `server.log` in the working directory.
+
+_Log format:_
+```
+2025-06-12 12:34:56 [127.0.0.1] GET /download?file=test.zip
+```
+
+---
+
+## Security Considerations
+
+- **HTTPS**: Always use `--https` in production and bind a valid SSL cert.  
+- **Authentication**: Basic Auth is low‐security; combine with HTTPS.  
+- **Directory Permissions**: Ensure the working directory is writeable by the server but secure from unauthorized access.
+
+---
+

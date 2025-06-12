@@ -1,6 +1,8 @@
-//Quick Web Server
+// QuickWebServer.cs
 //Written by Jason Bernier
 //https://github.com/jasonbernier/QuickWebServer
+// C# 7.3 compatible
+
 using System;
 using System.IO;
 using System.Linq;
@@ -13,130 +15,102 @@ namespace QuickWebServer
 {
     class Program
     {
-        // The working directory from which files will be served and stored.
         static string workingDirectory;
-        // Optional password for basic authentication. Set via the --password option.
         static string authPassword = null;
-
-        // Monitoring counters.
         static int totalRequests = 0;
         static int errorCount = 0;
 
-        // Main entry point of the application.
         static void Main(string[] args)
         {
-            // Check if the user requested help.
-            bool helpRequested = args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase));
-            if (helpRequested)
-            {
-                // Only display the help menu and then exit.
-                PrintHelp();
-                return;
-            }
-            else
-            {
-                // Always display the help menu on startup.
-                PrintHelp();
-            }
-
-            // Default values.
+            // Defaults
             string ip = "+";
             string port = "8080";
             workingDirectory = Directory.GetCurrentDirectory();
             bool useHttps = false;
+            bool helpRequested = false;
 
-            // Prepare collections for positional arguments and options.
-            List<string> positionalArgs = new List<string>();
-            Dictionary<string, string> options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-            // Parse arguments.
+            // Parse command-line options
             for (int i = 0; i < args.Length; i++)
             {
                 string arg = args[i];
-                if (arg.StartsWith("--"))
+                if (arg.Equals("--help", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (arg.Equals("--password", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
-                        {
-                            options["password"] = args[i + 1];
-                            i++; // Skip next argument as it is the password.
-                        }
-                        else
-                        {
-                            Console.WriteLine("Error: --password option requires a value.");
-                            return;
-                        }
-                    }
-                    else if (arg.Equals("--https", StringComparison.OrdinalIgnoreCase))
-                    {
-                        options["https"] = "true";
-                    }
-                    // Other options can be added here.
+                    helpRequested = true;
                 }
-                else
+                else if (arg.Equals("--ip", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
-                    // This argument is positional.
-                    positionalArgs.Add(arg);
+                    ip = args[++i];
+                }
+                else if (arg.Equals("--port", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    port = args[++i];
+                }
+                else if (arg.Equals("--workingdir", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    workingDirectory = args[++i];
+                }
+                else if (arg.Equals("--password", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    authPassword = args[++i];
+                }
+                else if (arg.Equals("--https", StringComparison.OrdinalIgnoreCase))
+                {
+                    useHttps = true;
                 }
             }
 
-            // Assign positional arguments if provided.
-            if (positionalArgs.Count > 0)
-                ip = positionalArgs[0];
-            if (positionalArgs.Count > 1)
-                port = positionalArgs[1];
-            if (positionalArgs.Count > 2)
-                workingDirectory = positionalArgs[2];
-
-            // If the --password option was set, use its value.
-            if (options.ContainsKey("password"))
-                authPassword = options["password"];
-
-            // If the --https option was set, enable HTTPS.
-            if (options.ContainsKey("https"))
-                useHttps = true;
-
-            // Validate working directory.
-            if (!Directory.Exists(workingDirectory))
+            if (helpRequested)
             {
-                Logger.Log("Error: The working directory does not exist.");
+                PrintHelp();
                 return;
             }
+            PrintHelp();
 
-            if (!string.IsNullOrEmpty(authPassword))
-                Logger.Log("Authentication enabled.");
-            else
-                Logger.Log("No authentication enabled.");
+            // Normalize 0.0.0.0 → +
+            if (ip == "0.0.0.0")
+            {
+                Logger.Log("Note: HttpListener does not support 0.0.0.0 — using + instead");
+                ip = "+";
+            }
 
-            // Determine scheme based on the --https flag.
+            // Ensure working directory exists or create it
+            if (!Directory.Exists(workingDirectory))
+            {
+                try
+                {
+                    Directory.CreateDirectory(workingDirectory);
+                    Logger.Log($"Working directory '{workingDirectory}' did not exist; created.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error creating working directory '{workingDirectory}': {ex.Message}");
+                    return;
+                }
+            }
+
+            Logger.Log(authPassword != null ? "Authentication enabled." : "No authentication.");
+
             string scheme = useHttps ? "https" : "http";
+            string prefix = string.Format("{0}://{1}:{2}/", scheme, ip, port);
 
-            // Build the listener prefix (e.g., http://+:8080/ or https://+:8080/).
-            string prefix = $"{scheme}://{ip}:{port}/";
-            HttpListener listener = new HttpListener();
+            var listener = new HttpListener();
             listener.Prefixes.Add(prefix);
 
             try
             {
                 listener.Start();
                 Logger.Log($"Quick Web Server started at {prefix}");
-                Logger.Log($"Working directory: {workingDirectory}");
+                Logger.Log($"Serving directory: {workingDirectory}");
 
-                // Continuously listen and process incoming requests.
                 while (true)
                 {
-                    HttpListenerContext context = listener.GetContext();
-                    Task.Run(() => ProcessRequest(context));
+                    var ctx = listener.GetContext();
+                    Task.Run(() => ProcessRequest(ctx));
                 }
-            }
-            catch (HttpListenerException hlex)
-            {
-                Logger.Log("HttpListenerException: " + hlex.Message);
             }
             catch (Exception ex)
             {
-                Logger.Log("Exception: " + ex.Message);
+                Logger.Log($"Listener error: {ex.Message}");
             }
             finally
             {
@@ -144,331 +118,281 @@ namespace QuickWebServer
             }
         }
 
-        // Prints the help documentation to the console.
         static void PrintHelp()
         {
-            Console.WriteLine("Quick Web Server");
-            Console.WriteLine("Usage: QuickWebServer.exe [ip] [port] [workingDirectory] [--password <password>] [--https]");
-            Console.WriteLine();
-            Console.WriteLine("If omitted, defaults are:");
-            Console.WriteLine("  ip: +            (listens on all IP addresses)");
-            Console.WriteLine("  port: 8080");
-            Console.WriteLine("  workingDirectory: current working directory");
-            Console.WriteLine("  --password:      no authentication");
-            Console.WriteLine("  --https:         use HTTPS (requires certificate binding)");
-            Console.WriteLine();
-            Console.WriteLine("Options:");
-            Console.WriteLine("  --help          Display this help message.");
-            Console.WriteLine();
+            Console.WriteLine(
+@"Quick Web Server (C# 7.3)
+
+Usage: QuickWebServer.exe [--ip <address>] [--port <port>] [--workingdir <path>]
+                        [--password <pw>] [--https] [--help]
+
+Options:
+  --ip <address>        Bind address (e.g. + for all or specific IP). Default: +
+  --port <port>         Listen port. Default: 8080
+  --workingdir <path>   Directory to serve. Default: current directory
+  --password <pw>       Enable Basic Auth with this password
+  --https               Serve over HTTPS (requires external cert binding)
+  --help                Display this help and exit
+
+Examples:
+  QuickWebServer.exe
+  QuickWebServer.exe --ip 0.0.0.0 --port 9000 --workingdir C:\Files --password secret --https
+");
         }
 
-        // Processes an individual HTTP request.
-        static void ProcessRequest(HttpListenerContext context)
+        static void ProcessRequest(HttpListenerContext ctx)
         {
             totalRequests++;
+            var req = ctx.Request;
+            var resp = ctx.Response;
+            string clientIp = req.RemoteEndPoint != null
+                ? req.RemoteEndPoint.Address.ToString()
+                : "unknown";
+
+            // Log every incoming request with IP
+            Logger.Log($"[{clientIp}] {req.HttpMethod} {req.Url}");
+
             try
             {
-                HttpListenerRequest request = context.Request;
-                HttpListenerResponse response = context.Response;
-
-                Logger.Log($"Request: {request.HttpMethod} {request.Url}");
-
-                // Handle the monitoring endpoint.
-                if (request.Url.AbsolutePath.Equals("/monitor", StringComparison.OrdinalIgnoreCase))
+                // Monitoring endpoint
+                if (req.Url.AbsolutePath.Equals("/monitor", StringComparison.OrdinalIgnoreCase))
                 {
-                    ServeMonitor(response);
+                    var json = string.Format("{{\"totalRequests\":{0},\"errorCount\":{1}}}",
+                        totalRequests, errorCount);
+                    resp.ContentType = "application/json";
+                    Write(resp, json);
                     return;
                 }
 
-                // Check for authentication if enabled.
-                if (!string.IsNullOrEmpty(authPassword))
+                // Authentication
+                if (authPassword != null)
                 {
-                    string authHeader = request.Headers["Authorization"];
-                    if (string.IsNullOrEmpty(authHeader) || !ValidateAuth(authHeader))
+                    var auth = req.Headers["Authorization"];
+                    if (string.IsNullOrEmpty(auth) || !ValidateAuth(auth))
                     {
-                        response.StatusCode = 401;
-                        response.AddHeader("WWW-Authenticate", "Basic realm=\"Quick Web Server\"");
-                        WriteResponse(response, "Authentication required.");
+                        resp.StatusCode = 401;
+                        resp.AddHeader("WWW-Authenticate", "Basic realm=\"QuickWebServer\"");
+                        Write(resp, "Authentication required");
                         return;
                     }
                 }
 
-                // Process GET requests.
-                if (request.HttpMethod == "GET")
+                // Routing
+                if (req.HttpMethod == "GET")
                 {
-                    if (request.Url.AbsolutePath == "/")
-                    {
-                        ServeIndex(response);
-                    }
-                    else if (request.Url.AbsolutePath.StartsWith("/download"))
-                    {
-                        string fileName = request.QueryString["file"];
-                        ServeFile(response, fileName);
-                    }
+                    if (req.Url.AbsolutePath == "/")
+                        ServeIndex(resp);
+                    else if (req.Url.AbsolutePath.StartsWith("/download"))
+                        ServeFile(ctx, req.QueryString["file"]);
                     else
                     {
-                        response.StatusCode = 404;
-                        WriteResponse(response, "Not found");
+                        resp.StatusCode = 404;
+                        Write(resp, "Not found");
                     }
                 }
-                // Process POST requests.
-                else if (request.HttpMethod == "POST")
+                else if (req.HttpMethod == "POST" && req.Url.AbsolutePath == "/upload")
                 {
-                    if (request.Url.AbsolutePath == "/upload")
-                    {
-                        HandleUpload(context);
-                    }
-                    else
-                    {
-                        response.StatusCode = 404;
-                        WriteResponse(response, "Not found");
-                    }
+                    HandleUpload(ctx);
                 }
                 else
                 {
-                    response.StatusCode = 405; // Method Not Allowed.
-                    WriteResponse(response, "Method not allowed");
+                    resp.StatusCode = 405;
+                    Write(resp, "Method not allowed");
                 }
             }
             catch (Exception ex)
             {
                 errorCount++;
-                Logger.Log("Error processing request: " + ex.Message);
+                Logger.Log($"[{clientIp}] Error: {ex.Message}");
             }
             finally
             {
-                try { context.Response.OutputStream.Close(); } catch { }
-            }
-        }
-
-        // Validates the HTTP Basic Authentication header.
-        static bool ValidateAuth(string authHeader)
-        {
-            if (!authHeader.StartsWith("Basic "))
-                return false;
-
-            string encodedCredentials = authHeader.Substring("Basic ".Length).Trim();
-            try
-            {
-                string decodedCredentials = Encoding.UTF8.GetString(Convert.FromBase64String(encodedCredentials));
-                // Expected format: "username:password" – we only check the password.
-                int separatorIndex = decodedCredentials.IndexOf(':');
-                if (separatorIndex < 0)
-                    return false;
-                string providedPassword = decodedCredentials.Substring(separatorIndex + 1);
-                return providedPassword == authPassword;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        // Serves the index page listing files and providing an upload form.
-        static void ServeIndex(HttpListenerResponse response)
-        {
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("<html><head><meta charset=\"utf-8\" /></head><body>");
-            sb.AppendLine("<h1>Quick Web Server - File List</h1>");
-            sb.AppendLine("<ul>");
-
-            // List each file in the working directory as a downloadable link.
-            foreach (string file in Directory.GetFiles(workingDirectory))
-            {
-                string fileName = Path.GetFileName(file);
-                sb.AppendLine($"<li><a href=\"/download?file={WebUtility.UrlEncode(fileName)}\">{fileName}</a></li>");
-            }
-            sb.AppendLine("</ul>");
-
-            // Provide an HTML form for file uploads.
-            sb.AppendLine("<h2>Upload File</h2>");
-            sb.AppendLine("<form method=\"post\" enctype=\"multipart/form-data\" action=\"/upload\">");
-            sb.AppendLine("<input type=\"file\" name=\"file\" />");
-            sb.AppendLine("<input type=\"submit\" value=\"Upload\" />");
-            sb.AppendLine("</form>");
-            sb.AppendLine("</body></html>");
-
-            byte[] buffer = Encoding.UTF8.GetBytes(sb.ToString());
-            response.ContentType = "text/html";
-            response.ContentLength64 = buffer.Length;
-            response.OutputStream.Write(buffer, 0, buffer.Length);
-        }
-
-        // Serves a file download request.
-        static void ServeFile(HttpListenerResponse response, string fileName)
-        {
-            if (string.IsNullOrEmpty(fileName))
-            {
-                response.StatusCode = 400;
-                WriteResponse(response, "File name not specified.");
-                return;
-            }
-
-            // Ensure that only files from the working directory are served.
-            string filePath = Path.Combine(workingDirectory, Path.GetFileName(fileName));
-            if (File.Exists(filePath))
-            {
+                // Ensure the response is closed
                 try
                 {
-                    byte[] fileBytes = File.ReadAllBytes(filePath);
-                    response.ContentType = "application/octet-stream";
-                    response.AddHeader("Content-Disposition", $"attachment; filename=\"{fileName}\"");
-                    response.ContentLength64 = fileBytes.Length;
-                    response.OutputStream.Write(fileBytes, 0, fileBytes.Length);
+                    resp.OutputStream.Close();
                 }
-                catch (Exception ex)
-                {
-                    response.StatusCode = 500;
-                    WriteResponse(response, "Error reading file.");
-                    Logger.Log("Error serving file: " + ex.Message);
-                }
-            }
-            else
-            {
-                response.StatusCode = 404;
-                WriteResponse(response, "File not found.");
+                catch { }
             }
         }
 
-        // Handles file upload requests.
-        static void HandleUpload(HttpListenerContext context)
+        static bool ValidateAuth(string header)
         {
-            HttpListenerRequest request = context.Request;
-            HttpListenerResponse response = context.Response;
-
-            if (!request.HasEntityBody)
-            {
-                response.StatusCode = 400;
-                WriteResponse(response, "No data received.");
-                return;
-            }
-
-            // Ensure the request's Content-Type is multipart/form-data.
-            string contentType = request.ContentType;
-            if (string.IsNullOrEmpty(contentType) || !contentType.StartsWith("multipart/form-data"))
-            {
-                response.StatusCode = 400;
-                WriteResponse(response, "Invalid content type.");
-                return;
-            }
-
-            // Extract the boundary from the Content-Type header.
-            string boundary = "--" + contentType.Split(new string[] { "boundary=" }, StringSplitOptions.None)[1];
-            byte[] boundaryBytes = Encoding.UTF8.GetBytes(boundary);
-
-            // Read the entire request body.
-            byte[] data;
-            using (MemoryStream ms = new MemoryStream())
-            {
-                request.InputStream.CopyTo(ms);
-                data = ms.ToArray();
-            }
-
-            // Convert the data to a string to parse multipart data.
-            string dataStr = Encoding.UTF8.GetString(data);
-            int headerIndex = dataStr.IndexOf("Content-Disposition");
-            if (headerIndex == -1)
-            {
-                response.StatusCode = 400;
-                WriteResponse(response, "Invalid multipart data.");
-                return;
-            }
-
-            int filenameIndex = dataStr.IndexOf("filename=\"", headerIndex);
-            if (filenameIndex == -1)
-            {
-                response.StatusCode = 400;
-                WriteResponse(response, "No file uploaded.");
-                return;
-            }
-
-            filenameIndex += "filename=\"".Length;
-            int filenameEnd = dataStr.IndexOf("\"", filenameIndex);
-            string fileName = dataStr.Substring(filenameIndex, filenameEnd - filenameIndex).Trim();
-            if (string.IsNullOrEmpty(fileName))
-            {
-                response.StatusCode = 400;
-                WriteResponse(response, "No file name provided.");
-                return;
-            }
-
-            // Find the start of the file content.
-            int dataStart = dataStr.IndexOf("\r\n\r\n", headerIndex);
-            if (dataStart == -1)
-            {
-                response.StatusCode = 400;
-                WriteResponse(response, "Invalid multipart data.");
-                return;
-            }
-            dataStart += "\r\n\r\n".Length;
-
-            // Find the ending boundary.
-            int dataEnd = dataStr.IndexOf(boundary, dataStart);
-            if (dataEnd == -1)
-            {
-                dataEnd = data.Length;
-            }
-            int fileDataLength = dataEnd - dataStart;
-
-            // Build the file path.
-            string filePath = Path.Combine(workingDirectory, Path.GetFileName(fileName));
+            if (!header.StartsWith("Basic ")) return false;
             try
             {
-                byte[] fileData = data.Skip(dataStart).Take(fileDataLength).ToArray();
-                File.WriteAllBytes(filePath, fileData);
-
-                // After successful upload, redirect back to the index page.
-                response.StatusCode = 303; // See Other.
-                response.RedirectLocation = "/";
+                var creds = Encoding.UTF8.GetString(Convert.FromBase64String(header.Substring(6)));
+                var parts = creds.Split(':');
+                return parts.Length == 2 && parts[1] == authPassword;
             }
-            catch (Exception ex)
+            catch { return false; }
+        }
+
+        static void ServeIndex(HttpListenerResponse resp)
+        {
+            const string html = @"
+<!DOCTYPE html>
+<html lang=""en"">
+<head>
+  <meta charset=""UTF-8"">
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+  <title>Quick Web Server</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    header { background-color: #004080; color: white; padding: 20px; text-align: center; }
+    main { padding: 20px; }
+    h2 { margin-top: 1em; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 5px 0; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    form { margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Quick Web Server</h1>
+    <br>Written by Jason Bernier
+  </header>
+  <main>
+    <h2>Available Files</h2>
+    <ul>
+      {{FILE_LIST}}
+    </ul>
+    <h2>Upload a File</h2>
+    <form method=""post"" enctype=""multipart/form-data"" action=""/upload"">
+      <input type=""file"" name=""file"" required />
+      <button type=""submit"">Upload</button>
+    </form>
+  </main>
+</body>
+</html>";
+
+            var listItems = new StringBuilder();
+            foreach (var file in Directory.GetFiles(workingDirectory))
             {
-                response.StatusCode = 500;
-                WriteResponse(response, "Error saving file.");
-                Logger.Log("Upload error: " + ex.Message);
+                var name = Path.GetFileName(file);
+                listItems.AppendFormat(
+                    "<li><a href=\"/download?file={0}\">{1}</a></li>",
+                    WebUtility.UrlEncode(name),
+                    WebUtility.HtmlEncode(name)
+                );
+            }
+
+            var page = html.Replace("{{FILE_LIST}}", listItems.ToString());
+            resp.ContentType = "text/html; charset=UTF-8";
+            var buf = Encoding.UTF8.GetBytes(page);
+            resp.ContentLength64 = buf.Length;
+            resp.OutputStream.Write(buf, 0, buf.Length);
+        }
+
+        static void ServeFile(HttpListenerContext ctx, string fileName)
+        {
+            var req = ctx.Request;
+            var resp = ctx.Response;
+            string clientIp = req.RemoteEndPoint != null
+                ? req.RemoteEndPoint.Address.ToString()
+                : "unknown";
+
+            if (string.IsNullOrEmpty(fileName))
+            {
+                resp.StatusCode = 400;
+                Write(resp, "No file specified");
+                return;
+            }
+
+            var path = Path.Combine(workingDirectory, Path.GetFileName(fileName));
+            if (!File.Exists(path))
+            {
+                resp.StatusCode = 404;
+                Write(resp, "File not found");
+                return;
+            }
+
+            // Log download event
+            Logger.Log($"[{clientIp}] Downloading file: {fileName}");
+
+            resp.ContentType = "application/octet-stream";
+            resp.AddHeader("Content-Disposition", $"attachment; filename=\"{fileName}\"");
+            resp.ContentLength64 = new FileInfo(path).Length;
+
+            // Stream the file to avoid loading it fully into memory
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                fs.CopyTo(resp.OutputStream);
             }
         }
 
-        // Serves the monitoring endpoint with basic metrics in JSON format.
-        static void ServeMonitor(HttpListenerResponse response)
+        static void HandleUpload(HttpListenerContext ctx)
         {
-            string json = $"{{ \"totalRequests\": {totalRequests}, \"errorCount\": {errorCount} }}";
-            byte[] buffer = Encoding.UTF8.GetBytes(json);
-            response.ContentType = "application/json";
-            response.ContentLength64 = buffer.Length;
-            response.OutputStream.Write(buffer, 0, buffer.Length);
+            var req = ctx.Request;
+            var resp = ctx.Response;
+            string clientIp = req.RemoteEndPoint != null
+                ? req.RemoteEndPoint.Address.ToString()
+                : "unknown";
+
+            if (!req.HasEntityBody || !req.ContentType.StartsWith("multipart/form-data"))
+            {
+                resp.StatusCode = 400;
+                Write(resp, "Bad upload");
+                return;
+            }
+
+            // Properly split boundary
+            string[] boundaryParts = req.ContentType.Split(
+                new[] { "boundary=" }, StringSplitOptions.None);
+            var boundary = "--" + boundaryParts.Last();
+
+            var ms = new MemoryStream();
+            req.InputStream.CopyTo(ms);
+            var bytes = ms.ToArray();
+            var text = Encoding.UTF8.GetString(bytes);
+
+            int idx = text.IndexOf("filename=\"");
+            if (idx < 0)
+            {
+                resp.StatusCode = 400;
+                Write(resp, "No file");
+                return;
+            }
+            idx += 10;
+            int end = text.IndexOf('"', idx);
+            var name = text.Substring(idx, end - idx);
+
+            int start = text.IndexOf("\r\n\r\n", end, StringComparison.Ordinal) + 4;
+            int bidx = text.IndexOf(boundary, start, StringComparison.Ordinal);
+            var fileData = bytes.Skip(start).Take(bidx - start).ToArray();
+
+            var savePath = Path.Combine(workingDirectory, Path.GetFileName(name));
+            File.WriteAllBytes(savePath, fileData);
+
+            Logger.Log($"[{clientIp}] Uploaded file: {name}");
+
+            resp.StatusCode = 303;
+            resp.RedirectLocation = "/";
         }
 
-        // Writes a plain text response to the client.
-        static void WriteResponse(HttpListenerResponse response, string message)
+        static void Write(HttpListenerResponse resp, string s)
         {
-            byte[] buffer = Encoding.UTF8.GetBytes(message);
-            response.ContentType = "text/plain";
-            response.ContentLength64 = buffer.Length;
-            response.OutputStream.Write(buffer, 0, buffer.Length);
+            var buf = Encoding.UTF8.GetBytes(s);
+            resp.ContentLength64 = buf.Length;
+            resp.OutputStream.Write(buf, 0, buf.Length);
         }
     }
 
-    // A simple thread-safe logger that writes to both the console and a log file.
     static class Logger
     {
-        private static readonly object lockObj = new object();
-        private static readonly string logFile = "server.log";
+        static readonly object _lock = new object();
+        const string LogFile = "server.log";
 
-        public static void Log(string message)
+        public static void Log(string msg)
         {
-            lock (lockObj)
+            lock (_lock)
             {
-                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}";
+                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {msg}";
                 Console.WriteLine(line);
-                try
-                {
-                    File.AppendAllText(logFile, line + Environment.NewLine);
-                }
-                catch
-                {
-                    // If logging to file fails, continue silently.
-                }
+                try { File.AppendAllText(LogFile, line + Environment.NewLine); }
+                catch { }
             }
         }
     }
